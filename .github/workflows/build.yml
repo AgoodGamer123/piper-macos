@@ -78,5 +78,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" build/*.dmg \
-            --title "Piper $GITHUB_REF_NAME" --notes-file .github/release-notes.md
+          # the release may already exist if it was created on github.com
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" build/*.dmg --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" build/*.dmg \
+              --title "Piper $GITHUB_REF_NAME" --notes-file .github/release-notes.md
+          fi
