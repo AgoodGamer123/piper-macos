@@ -2,7 +2,7 @@
 
 ## TLDR
 
-This is a vibecoded port of piper to macos
+This is a vibecoded port of piper to macos because I really hate logitech ghub
 
 ## Description
 
