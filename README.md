@@ -1,5 +1,9 @@
 # Piper for macOS
 
+## TLDR
+
+This is a vibecoded port of piper to macos
+
 A native macOS app to configure gaming mice: DPI steps, button mappings,
 macros, LEDs, report rate and onboard profiles. It is a SwiftUI front end to
 [libratbag](https://github.com/libratbag/libratbag), the library behind the
