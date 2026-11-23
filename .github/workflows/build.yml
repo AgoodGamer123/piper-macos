@@ -1,0 +1,82 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  libratbag-linux:
+    name: libratbag tests (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq meson ninja-build swig check python3-dev \
+            libudev-dev libevdev-dev libsystemd-dev libglib2.0-dev libjson-glib-dev libunistring-dev
+      - name: udev build and tests
+        working-directory: libratbag
+        run: |
+          meson setup build-udev -Dsystemd=false -Ddocumentation=false -Dtests=true
+          meson test -C build-udev --print-errorlogs \
+            test-context test-device test-util test-iconv-helper keyfile-compat-test \
+            data-parse-test duplicate-test receiver-id-test
+      - name: Portable build against the emulated G703 (ASan/UBSan)
+        working-directory: libratbag
+        run: |
+          meson setup build-portable -Dhid-backend=portable -Db_sanitize=address,undefined -Db_lundef=false
+          ninja -C build-portable
+          export LIBRATBAG_DATA_DIR=$PWD/data/devices RATBAG_EMU_SOCKET=/tmp/emu.sock
+          python3 tools/hidpp-emu.py --socket /tmp/emu.sock --mode both &
+          sleep 1
+          build-portable/ratbag-probe -v
+          build-portable/ratbag-probe --set-dpi 1200 | tee probe.log
+          grep -c "commit: ok" probe.log | grep -qx 2
+
+  macos:
+    name: macOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+      - name: libratbag on macOS against the emulated G703
+        run: |
+          brew install meson ninja
+          cd libratbag
+          meson setup build -Dhid-backend=portable
+          ninja -C build
+          export LIBRATBAG_DATA_DIR=$PWD/data/devices
+          # the real IOKit backend must list this Mac's HID devices without crashing
+          build/ratbag-probe -v || [ $? -eq 2 ]
+          export RATBAG_EMU_SOCKET=/tmp/emu.sock
+          python3 tools/hidpp-emu.py --socket /tmp/emu.sock --mode both &
+          sleep 1
+          build/ratbag-probe --set-dpi 1200 | tee probe.log
+          grep -c "commit: ok" probe.log | grep -qx 2
+      - name: Build Piper.app
+        run: scripts/build-app.sh
+      - name: Make DMG
+        run: scripts/make-dmg.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Piper-dmg
+          path: build/*.dmg
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/*.dmg \
+            --title "Piper $GITHUB_REF_NAME" --notes-file .github/release-notes.md
